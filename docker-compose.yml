@@ -1,0 +1,486 @@
+version: "3.8"
+services:
+    # caddy:
+    #     image: ghcr.io/authp/authp:latest
+    #     container_name: caddy
+    #     restart: unless-stopped
+    #     ports:
+    #         - "80:80"
+    #         - "443:443"
+    #     environment:
+    #         - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+    #         - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+    #         - OAUTH_RANDOM_SECRET=${OAUTH_RANDOM_SECRET}
+    #         - EMAIL_WHITELIST=${EMAIL_WHITELIST}
+    #         - DOMAIN=${DOMAIN}
+    #     volumes:
+    #         - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile
+    #         - ./config/caddy/data:/data
+    #         - ./config/caddy/config:/config
+    #     networks:
+    #         - web
+
+    # ----------------------------------------
+    # JACKETT
+    # RSS/TORZNAB Feed Creator
+    # ----------------------------------------
+    jackett:
+        image: linuxserver/jackett
+        container_name: jackett
+        environment:
+            - TZ=${TZ}
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        volumes:
+            - ./config/jackett:/config
+            - "${ROOT_FOLDER}/Torrents/Completed:/downloads"
+        expose:
+            - 9117
+        restart: unless-stopped
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.jackett.rule=Host(`jackett.${DOMAIN}`)"
+            - "traefik.http.routers.jackett.tls.certresolver=le"
+            - "traefik.http.routers.jackett.entrypoints=web-secure"
+            - "traefik.http.services.jackett.loadbalancer.server.port=9117"
+            - "traefik.http.routers.jackett.middlewares=traefik-forward-auth"
+
+    # ----------------------------------------
+    # PLEX
+    # Robust Media Server
+    # ----------------------------------------
+    # plex:
+    #     container_name: plex
+    #     image: plexinc/pms-docker
+    #     restart: unless-stopped
+    #     depends_on:
+    #         - traefik
+    #     logging:
+    #         driver: "json-file"
+    #         options:
+    #             max-file: "5"
+    #             max-size: "10m"
+    #     networks:
+    #         - web
+    #     ports:
+    #         - "32400:32400/tcp"
+    #     environment:
+    #         - TZ=${TZ}
+    #         - PLEX_CLAIM=${PLEX_CLAIM}
+    #         - ALLOWED_NETWORKS=${HOME_CIDR}
+    #     hostname: ${HOSTNAME}
+    #     expose:
+    #         - 32400
+    #     volumes:
+    #         - "./config/plex:/config"
+    #         - "./config/plex/transcode:/transcode"
+    #         - "${ROOT_FOLDER}/Media/Movies:/data/movies"
+    #         - "${ROOT_FOLDER}/Media/TVShows:/data/tvshows"
+    #         - "${ROOT_FOLDER}/Media/Kid Movies:/data/kidmovies"
+    #         - "${ROOT_FOLDER}/Media/Kid TV:/data/kidtvshows"
+    #     labels:
+    #         - "traefik.enable=true"
+    #         - "traefik.http.routers.plex.rule=Host(`plex.${DOMAIN}`)"
+    #         - "traefik.http.routers.plex.tls.certresolver=le"
+    #         - "traefik.http.routers.plex.entrypoints=web-secure"
+    #         - "traefik.http.services.plex.loadbalancer.server.port=32400"
+
+    # ----------------------------------------
+    # DELUGE
+    # Torrent Client - VPN killswitch enabled
+    # ----------------------------------------
+    arch-delugevpn:
+        image: binhex/arch-delugevpn
+        container_name: delugevpn
+        restart: unless-stopped
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        expose:
+            - 8112
+            - 8118
+            - 58846
+            - 58946
+        ports:
+            - "8112:8112"
+        cap_add:
+            - NET_ADMIN
+        environment:
+            - TZ=${TZ}
+            - VPN_ENABLED=yes
+            - VPN_USER=${VPN_USER}
+            - VPN_PASS=${VPN_PASS}
+            - VPN_PROTOCOL=udp
+            - VPN_PROV=custom
+            - ENABLE_PRIVOXY=yes
+            - STRICT_PORT_FORWARD=yes
+            - LAN_NETWORK=192.168.0.0/24
+            - NAME_SERVERS=84.200.69.80,37.235.1.174,1.1.1.1,37.235.1.177,84.200.70.40,1.0.0.1
+            - DELUGE_ENABLE_WEBUI_PASSWORD=no
+            - DEBUG=false
+
+        volumes:
+            - "${ROOT_FOLDER}/Torrents:/data"
+            - "./config/delugevpn/config:/config"
+            - "./config/openvpn:/config/openvpn"
+
+    # ----------------------------------------
+    # RADARR
+    # Movie Management
+    # ----------------------------------------
+    radarr:
+        image: linuxserver/radarr
+        container_name: radarr
+        restart: unless-stopped
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        expose:
+            - 7878
+        environment:
+            - TZ=${TZ}
+        volumes:
+            - "./config/radarr:/config"
+            - "${ROOT_FOLDER}/Torrents/Completed:/data/Completed"
+            - "${ROOT_FOLDER}/Media/Movies:/movies"
+            - "${ROOT_FOLDER}/Media/Kid Movies:/kidmovies"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN}`)"
+            - "traefik.http.routers.radarr.tls.certresolver=le"
+            - "traefik.http.routers.radarr.entrypoints=web-secure"
+            - "traefik.http.routers.radarr.middlewares=traefik-forward-auth"
+
+    # ----------------------------------------
+    # SONARR
+    # TV Show Management
+    # ----------------------------------------
+    sonarr:
+        image: linuxserver/sonarr
+        container_name: sonarr
+        restart: unless-stopped
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        expose:
+            - 8989
+        environment:
+            - TZ=${TZ}
+            - PUID=${PUID}
+            - PGID=${PGID}
+        volumes:
+            - "./config/sonarr:/config"
+            - "${ROOT_FOLDER}/Torrents/Completed:/data/Completed"
+            - "${ROOT_FOLDER}/Media/TVShows:/tv"
+            - "${ROOT_FOLDER}/Media/Kid TV:/kidtv"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAIN}`)"
+            - "traefik.http.routers.sonarr.tls.certresolver=le"
+            - "traefik.http.routers.sonarr.entrypoints=web-secure"
+            - "traefik.http.routers.sonarr.middlewares=traefik-forward-auth"
+
+    # ----------------------------------------
+    # PORTAINER
+    # Docker Management
+    # ----------------------------------------
+    # portainer:
+    #     image: portainer/portainer-ce:latest
+    #     container_name: portainer
+    #     restart: unless-stopped
+    #     logging:
+    #         driver: "json-file"
+    #         options:
+    #             max-file: "5"
+    #             max-size: "10m"
+    #     networks:
+    #         - web
+    #     expose:
+    #         - 9000
+    #     ports:
+    #         - "9000:9000"
+    #     environment:
+    #         - TZ=${TZ}
+    #         - PUID=${PUID}
+    #         - PGID=${PGID}
+    #     volumes:
+    #         - "./config/portainer:/data"
+    #         - "/var/run/docker.sock:/var/run/docker.sock"
+    #         - "/etc/localtime:/etc/localtime:ro"
+    #     labels:
+    #         - "traefik.enable=true"
+    #         - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
+    #         - "traefik.http.routers.portainer.tls.certresolver=le"
+    #         - "traefik.http.routers.portainer.entrypoints=web-secure"
+    #         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+    # ----------------------------------------
+    # TRAEFIK
+    # Reverse Proxy
+    # ----------------------------------------
+    traefik:
+        image: traefik:v2.10
+        container_name: traefik
+        restart: unless-stopped
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        ports:
+            - "80:80"
+            - "443:443"
+        environment:
+            - TZ=${TZ}
+            - PUID=${PUID}
+            - PGID=${PGID}
+        volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock"
+            - ./config/traefik:/etc/traefik
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.traefik.rule=Host(`server.${DOMAIN}`)"
+            - "traefik.http.routers.traefik.entrypoints=web-secure"
+            - "traefik.http.routers.traefik.service=api@internal"
+            - "traefik.http.routers.traefik.middlewares=traefik-forward-auth"
+            - "traefik.http.services.traefik.loadbalancer.server.port=8081"
+            # global redirect to https
+            - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
+            - "traefik.http.routers.http-catchall.entrypoints=web"
+            - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+
+            # middleware redirect
+            - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+
+    # ----------------------------------------
+    # OVERSEERR
+    # Request Management
+    # ----------------------------------------
+    overseerr:
+        image: lscr.io/linuxserver/overseerr:latest
+        container_name: overseerr
+        restart: unless-stopped
+        depends_on:
+            - traefik
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        expose:
+            - 5055
+        environment:
+            - TZ=${TZ}
+            - PUID=${PUID}
+            - PGID=${PGID}
+        volumes:
+            - ./config/overseerr:/config
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.overseerr.rule=Host(`overseerr.${DOMAIN}`)"
+            - "traefik.http.routers.overseerr.tls.certresolver=le"
+            - "traefik.http.routers.overseerr.entrypoints=web-secure"
+
+    # ----------------------------------------
+    # AUTH MIDDLEWARE
+    # OAUTH middleware to require google login for ingress to secure services
+    # Only users in EMAIL_WHITELIST will be granted access
+    # ----------------------------------------
+    traefik-forward-auth:
+        image: thomseddon/traefik-forward-auth:2
+        environment:
+            - PROVIDERS_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            - PROVIDERS_GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+            - SECRET=${OAUTH_RANDOM_SECRET}
+            - WHITELIST=${EMAIL_WHITELIST}
+        depends_on:
+            - traefik
+        networks:
+            - web
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.middlewares.traefik-forward-auth.forwardauth.address=http://traefik-forward-auth:4181"
+            - "traefik.http.middlewares.traefik-forward-auth.forwardauth.authResponseHeaders=X-Forwarded-User"
+            - "traefik.http.services.traefik-forward-auth.loadbalancer.server.port=4181"
+
+    # ----------------------------------------
+    # DUCKDNS
+    # Dynamic DNS - Not needed if you have a static IP
+    # ----------------------------------------
+    duckdns:
+        image: lscr.io/linuxserver/duckdns:latest
+        container_name: duckdns
+        restart: unless-stopped
+        logging:
+            driver: "json-file"
+            options:
+                max-file: "5"
+                max-size: "10m"
+        networks:
+            - web
+        environment:
+            - TZ=${TZ}
+            - SUBDOMAINS=${DUCK_DNS_SUBDOMAINS}
+            - TOKEN=${DUCK_DNS_TOKEN}
+            - LOG_FILE=true
+        volumes:
+            - ./config/duckdns:/config
+
+    # ----------------------------------------
+    # PLEXPY
+    # Plex Analytics
+    # ----------------------------------------
+    # plexpy:
+    #     image: linuxserver/tautulli
+    #     container_name: plexpy
+    #     restart: unless-stopped
+    #     logging:
+    #         driver: "json-file"
+    #         options:
+    #             max-file: "5"
+    #             max-size: "10m"
+    #     networks:
+    #         - web
+    #     expose:
+    #         - 8181
+    #     depends_on:
+    #         - plex
+    #     environment:
+    #         - TZ=${TZ}
+    #         - PUID=${PUID}
+    #         - PGID=${PGID}
+    #     volumes:
+    #         - "./config/plexpy:/config"
+    #         - "./config/plex/Library/Application Support/Plex Media Server/Logs:/logs:ro"
+    #         - "/etc/localtime:/etc/localtime:ro"
+    #     labels:
+    #         - "traefik.enable=true"
+    #         - "traefik.http.routers.plexpy.rule=Host(`plexpy.${DOMAIN}`)"
+    #         - "traefik.http.routers.plexpy.tls.certresolver=le"
+    #         - "traefik.http.routers.plexpy.entrypoints=web-secure"
+    #         - "traefik.http.routers.plexpy.middlewares=traefik-forward-auth"
+    #         - "traefik.http.services.plexpy.loadbalancer.server.port=8181"
+
+    # ----------------------------------------
+    # INFLUXDB
+    # Time Series Database
+    # ----------------------------------------
+    # influxdb:
+    #     image: influxdb
+    #     container_name: influxdb
+    #     restart: unless-stopped
+    #     logging:
+    #         driver: "json-file"
+    #         options:
+    #             max-file: "5"
+    #             max-size: "10m"
+    #     networks:
+    #         - internal
+    #     expose:
+    #         - 8086
+    #     ports:
+    #         - "8086:8086"
+    #     environment:
+    #         - TZ=${TZ}
+    #         - PUID=${PUID}
+    #         - PGID=${PGID}
+    #         - INFLUXDB_DB=telegraf
+    #     volumes:
+    #         - "./config/influxdb:/var/lib/influxdb"
+    #     labels:
+    #         - "traefik.enable=false"
+
+    # ----------------------------------------
+    # TELEGRAF
+    # Metrics Collector
+    # TODO: could not get telegraf to work with individual container monitoring
+    # ----------------------------------------
+    # telegraf:
+    #     image: telegraf
+    #     container_name: telegraf
+    #     restart: unless-stopped
+    #     logging:
+    #         driver: "json-file"
+    #         options:
+    #             max-file: "5"
+    #             max-size: "10m"
+    #     networks:
+    #         - internal
+    #         - web
+    #     environment:
+    #         - TZ=${TZ}
+    #         - PUID=${PUID}
+    #         - PGID=${PGID}
+    #         - INFLUX_TOKEN=${INFLUX_TOKEN}
+    #     depends_on:
+    #         - influxdb
+    #     volumes:
+    #         - "./config/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro"
+    #     labels:
+    #         - "traefik.enable=false"
+
+    # ----------------------------------------
+    # GRAFANA
+    # Metrics Dashboard
+    # ----------------------------------------
+    # grafana:
+    #     image: grafana/grafana
+    #     container_name: grafana
+    #     restart: unless-stopped
+    #     logging:
+    #         driver: "json-file"
+    #         options:
+    #             max-file: "5"
+    #             max-size: "10m"
+    #     networks:
+    #         - web
+    #         - internal
+    #     expose:
+    #         - 3000
+    #     user: "0"
+    #     environment:
+    #         - TZ=${TZ}
+    #         - PUID=${PUID}
+    #         - PGID=${PGID}
+    #         - GF_SERVER_DOMAIN=grafana.${DOMAIN}
+    #         - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+    #         - GF_PATHS_DATA=/config/data
+    #         - GF_PATHS_LOGS=/config/logs
+    #         - GF_PATHS_PLUGINS=/config/plugins
+    #         - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+    #     volumes:
+    #         - "./config/grafana:/config"
+    #     depends_on:
+    #         - influxdb
+    #     labels:
+    #         - "traefik.enable=true"
+    #         - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+    #         - "traefik.http.routers.grafana.tls.certresolver=le"
+    #         - "traefik.http.routers.gra  fana.entrypoints=web-secure"
+    #         - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    #         - "traefik.http.routers.grafana.middlewares=traefik-forward-auth"
+
+networks:
+    internal:
+    web:
