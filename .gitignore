@@ -1,2 +1,7 @@
 .env
-config
+
+-- Caddyfile
+config/*
+!config/caddy/
+config/caddy/*
+!config/caddy/Caddyfile

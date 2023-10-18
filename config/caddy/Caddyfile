@@ -1,0 +1,86 @@
+{
+    order authenticate before respond
+	order authorize before basicauth
+
+	security {
+		oauth identity provider google {
+			realm google
+			driver google
+			client_id {$GOOGLE_CLIENT_ID}
+			client_secret {$GOOGLE_CLIENT_SECRET}
+			scopes openid email profile
+		}
+
+		authentication portal google_portal {
+			crypto default token lifetime 3600
+			crypto key sign-verify {$OAUTH_RANDOM_SECRET}
+			enable identity provider google
+			cookie domain {$DOMAIN}
+
+			transform user {
+				match realm google
+				action add role authp/user
+			}
+
+			transform user {
+				match realm google
+				match email {$EMAIL_WHITELIST}
+				action add role authp/admin
+			}
+		}
+
+		authorization policy admins {
+			set auth url https://auth.{$DOMAIN}/oauth2/google
+			crypto key verify {$OAUTH_RANDOM_SECRET}
+			allow roles authp/admin
+			validate bearer header
+			inject headers with claims
+		}
+
+        authorization policy all {
+			set auth url https://auth.{$DOMAIN}/oauth2/google
+			crypto key verify {$OAUTH_RANDOM_SECRET}
+			allow roles authp/admin authp/user
+			validate bearer header
+			inject headers with claims
+		}
+	}
+}
+
+plex.{$DOMAIN} {
+    reverse_proxy 192.168.0.2:32400
+}
+
+auth.{$DOMAIN} {
+	authenticate with google_portal
+}
+
+jackett.{$DOMAIN} {
+	authorize with admins
+	reverse_proxy jackett:9117
+}
+
+sonarr.{$DOMAIN} {
+    authorize with admins
+    reverse_proxy sonarr:8989
+}
+
+radarr.{$DOMAIN} {
+    authorize with admins
+    reverse_proxy radarr:7878
+}
+
+overseerr.{$DOMAIN} {
+    authorize with all
+    reverse_proxy overseerr:5055
+}
+
+server.{$DOMAIN} {
+	authorize with admins
+    reverse_proxy homarr:7575
+}
+
+portainer.{$DOMAIN} {
+    authorize with admins
+    reverse_proxy portainer:9000
+}
